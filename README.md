@@ -1,100 +1,88 @@
 # K8s Games
 
-Learn Kubernetes by playing. Deploy pods, fix CrashLoopBackOff, type real kubectl commands — all in a 3D sim that runs in your browser.
+Terminal-based Kubernetes challenges backed by real, isolated namespaces. The server prepares each scenario, proxies `kubectl` as a namespace-scoped ServiceAccount, grades the result, and removes the environment when the player leaves.
 
-**[Play Now at k8sgames.com](https://k8sgames.com)** | **[K8s Draw — 3D Architecture Diagrams](https://k8sgames.com/draw)**
+## Player
 
-![K8s Games — 3D Kubernetes cluster simulation in the browser](screenshot.png)
+Build the CLI and point it at a deployed server:
 
-## Get Started
-
-Visit **[k8sgames.com](https://k8sgames.com)** and pick a mode. No install, no signup, no build step.
-
-Just here to diagram? Go straight to **[k8sgames.com/draw](https://k8sgames.com/draw)** — drag K8s resources onto a 3D canvas, draw connections, export YAML or PNG, and share via URL.
-
-Or run locally:
-
-```bash
-git clone https://github.com/rohitg00/k8sgames.git
-cd k8sgames
-python3 -m http.server 8080
-# Open http://localhost:8080
+```sh
+go build -o k8sgames ./cmd/k8sgames
+./k8sgames -server https://games.example.com -list
+./k8sgames -server https://games.example.com
 ```
 
-## How to Play
+Without flags, the CLI shows the challenge picker:
 
-1. Pick a game mode from the main menu
-2. Click resources from the left palette to place them in your cluster
-3. Drag resources to reposition them anywhere
-4. Click any resource to inspect it (status, YAML, kubectl describe)
-5. Right-click for actions (Scale, Delete, Logs, Restart)
-6. Press `/` to open the kubectl command bar
-7. Handle incidents as they appear — diagnose and fix like a real SRE
-8. Press `?` anytime for help
+```text
+K8s Games — Challenges
+  1. [ ] Broken Image
+  2. [✓] Scale Up
+  3. [ ] Missing Endpoints
+  4. [ ] Resource Discipline
 
-## Game Modes
+Progress: 1/4
+Select a number, (a)ll remaining, or (q)uit:
+```
 
-| Mode | What You Do |
-|------|-------------|
-| **Campaign** | 20 levels across 5 chapters. Learn pods, deployments, networking, storage, and production K8s |
-| **Chaos** | Endless survival. Incidents escalate until your cluster breaks. How long can you last? |
-| **Sandbox** | Free build. Design any cluster, get scored 0-100 by the Architecture Advisor |
-| **Challenges** | 10 timed scenarios. Deploy apps, fix outages, race the clock |
+A selected session starts immediately:
 
-### K8s Draw (`/draw`)
+```text
+K8s Games — Broken Image
+Objective: Make both replicas of deployment/web available.
 
-A 3D Kubernetes architecture whiteboard. Like Excalidraw but for K8s.
+k8sgames-a1b2c3 $ kubectl get pods
+k8sgames-a1b2c3 $ kubectl describe pod web-...
+k8sgames-a1b2c3 $ kubectl set image deployment/web web=nginx:1.27-alpine
+```
 
-- Drag-drop 21 resource types onto a 3D canvas
-- Draw connection lines between resources
-- Double-click to rename any resource
-- Auto-layout organizes by tier (Nodes, Workloads, Networking, Storage, RBAC)
-- Export as YAML (with correct apiVersions) or PNG
-- Share diagrams via URL — one-click copy, open anywhere
-- Edit properties: name, namespace, labels, replicas
-- Right-click to delete, `Del` key for selected
+No kubeconfig, kubectl installation, or local Kubernetes cluster is given to the player. Only the CLI is required. The remote shell supports native Tab completion, history, pipes, Ctrl+C, and interactive commands.
 
-No game logic, no incidents, no scoring — just diagramming.
+Run `check` for immediate feedback. Confirmed completions return to the picker and are stored in the operating system's user config directory. Set `K8SGAMES_PROGRESS` to use another progress file. Select `a` to play every unfinished challenge, or bypass the picker with `-challenge <id>`.
 
-## Controls
+## Server
 
-| Input | Action |
-|-------|--------|
-| `/` | kubectl command bar |
-| `?` | Help / How to play |
-| `Space` | Pause / Resume |
-| `M` | Metrics dashboard |
-| `Esc` | Back to menu |
-| `1-9` | Quick-select resource |
-| Left-click | Select resource |
-| Left-drag | Move resource or rotate camera |
-| Right-click | Context menu |
-| Right-drag | Pan |
-| Scroll | Zoom |
+The backend needs `kubectl` and cluster-admin-equivalent provisioning permissions. For local development, use your current kubeconfig:
 
-Bottom toolbar: **Auto-Align** (K8s architecture layout) | **Reset View** | **YAML** (export cluster) | **Help**
+```sh
+go run ./cmd/k8sgames-server
+```
 
-## What's In It
+Deploy in Kubernetes after publishing the image referenced by the manifest:
 
-**25 K8s resources** — Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, CronJob, Service, Ingress, NetworkPolicy, ConfigMap, Secret, PVC, PV, StorageClass, Node, Namespace, HPA, ResourceQuota, PodDisruptionBudget, ServiceAccount, Role, ClusterRole, RoleBinding, ClusterRoleBinding. Each has a unique 3D shape, color, and real K8s behavior.
+```sh
+docker build -t ghcr.io/huypham37/k8sgames:latest .
+docker build -f Dockerfile.toolbox -t ghcr.io/huypham37/k8sgames-toolbox:latest .
+kubectl apply -f deploy/kubernetes.yaml
+```
 
-**29 incidents** — OOMKilled, CrashLoopBackOff, ImagePullBackOff, node NotReady, DNS failures, PVC pending, API throttling, rollout stuck, certificate expiry, HPA flapping, and more. Investigate with kubectl describe/logs, then fix.
+Each session receives:
 
-**kubectl command bar** — type real commands: `get pods`, `describe deployment nginx`, `scale deployment nginx --replicas=3`, `logs pod-1`, `rollout status`, `drain node-1`. Tab completion included.
+- A dedicated `k8sgames-*` namespace
+- A ResourceQuota and LimitRange
+- A namespace-only player ServiceAccount and Role
+- A dedicated Bash and kubectl toolbox Pod
+- A preconfigured broken workload
+- A random bearer token and a 30-minute expiration
 
-**Visual connections** — animated lines show ownership chains (Deployment -> ReplicaSet -> Pod) and network routing (Service -> Pods) based on label selectors. Place a Service and pick which Deployment it connects to.
+The CLI streams the local terminal over WebSocket to a PTY attached to the toolbox Pod. The Pod uses the player ServiceAccount, so Kubernetes RBAC enforces namespace isolation without exposing backend credentials.
 
-**Edit resources** — click Edit on any resource to modify labels, replicas, selectors, and service types. Quick-connect buttons let you wire a Service to an existing Deployment in one click.
+## Commands
 
-**Architecture Advisor** — scores your cluster design across HA, security, scalability, cost, and 6 other categories.
+```sh
+go test ./...
+go build ./cmd/...
+```
 
-**40 achievements** and a 30-level XP system from Novice to CKA-ready.
+Server options:
 
-**RBAC simulation** — ServiceAccounts, Roles, ClusterRoles, RoleBindings, and ClusterRoleBindings with real rule definitions and wildcard detection.
-
-## Tech
-
-Three.js r152 + Tailwind CSS CDN + vanilla ES6 modules. No build step, no dependencies, no bundler. ~50K lines across 90+ files.
+```text
+-listen=:8080
+-kubectl=kubectl
+-session-ttl=30m
+-max-sessions=100
+-toolbox-image=alpine/k8s:1.35.0
+```
 
 ## License
 
