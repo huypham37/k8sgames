@@ -1,0 +1,14 @@
+FROM alpine:3.22
+
+ARG KUBECTL_VERSION=v1.35.0
+ARG TARGETARCH
+
+RUN apk add --no-cache bash bash-completion ca-certificates curl \
+    && curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
+    && chmod +x /usr/local/bin/kubectl \
+    && apk del curl \
+    && adduser -D -u 1000 player
+
+USER 1000:1000
+WORKDIR /home/player
+CMD ["sleep", "infinity"]
