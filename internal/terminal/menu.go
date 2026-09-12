@@ -23,13 +23,18 @@ func (m *Menu) Select(challenges []game.Challenge, completed func(string) bool) 
 	for {
 		done := 0
 		fmt.Fprintln(m.output, "\nK8s Games — Challenges")
+		chapter := ""
 		for index, challenge := range challenges {
+			if challenge.Chapter != chapter {
+				chapter = challenge.Chapter
+				fmt.Fprintf(m.output, "\n%s\n", chapter)
+			}
 			mark := " "
 			if completed(challenge.ID) {
 				mark = "✓"
 				done++
 			}
-			fmt.Fprintf(m.output, "  %d. [%s] %-20s %s\n", index+1, mark, challenge.Title, challenge.Objective)
+			fmt.Fprintf(m.output, "  %2d. [%s] %s\n", index+1, mark, challenge.Title)
 		}
 		fmt.Fprintf(m.output, "\nProgress: %d/%d\n", done, len(challenges))
 		fmt.Fprint(m.output, "Select a number, (a)ll remaining, or (q)uit: ")

@@ -21,7 +21,7 @@ type Terminal interface {
 }
 
 type Cluster interface {
-	Provision(context.Context, string, string) error
+	Provision(context.Context, string, Challenge) error
 	Inspect(context.Context, string, []string) Result
 	OpenTerminal(context.Context, string, Challenge, TerminalSize) (Terminal, error)
 	Delete(context.Context, string) error

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,7 +81,7 @@ func (m *Manager) Create(ctx context.Context, challengeID string) (CreatedSessio
 		ID: id, Namespace: "k8sgames-" + id, Challenge: challenge,
 		CreatedAt: now, ExpiresAt: now.Add(m.ttl), Progress: challenge.Objective, token: token,
 	}
-	if err := m.cluster.Provision(ctx, session.Namespace, challenge.Manifest); err != nil {
+	if err := m.cluster.Provision(ctx, session.Namespace, challenge); err != nil {
 		return CreatedSession{}, fmt.Errorf("provision session: %w", err)
 	}
 
@@ -179,7 +181,24 @@ func (m *Manager) authorize(id, token string) (Session, error) {
 func (m *Manager) grade(ctx context.Context, session *Session) (bool, string) {
 	for _, probe := range session.Challenge.Probes {
 		result := m.cluster.Inspect(ctx, session.Namespace, probe.Args)
-		if result.ExitCode != 0 || strings.TrimSpace(result.Output) != probe.Equals {
+		output := strings.TrimSpace(result.Output)
+		failed := result.ExitCode != 0
+		switch {
+		case probe.NotEmpty:
+			failed = failed || output == ""
+		case len(probe.Unordered) > 0:
+			values := strings.Fields(output)
+			slices.Sort(values)
+			expected := append([]string(nil), probe.Unordered...)
+			slices.Sort(expected)
+			failed = failed || !slices.Equal(values, expected)
+		case probe.AtLeast > 0:
+			value, err := strconv.Atoi(output)
+			failed = failed || err != nil || value < probe.AtLeast
+		default:
+			failed = failed || output != probe.Equals
+		}
+		if failed {
 			return false, probe.Pending
 		}
 	}

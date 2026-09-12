@@ -21,7 +21,7 @@ func NewKubectl(path string, timeout time.Duration, toolboxImage string) *Kubect
 	return &Kubectl{path: path, timeout: timeout, toolboxImage: toolboxImage}
 }
 
-func (k *Kubectl) Provision(ctx context.Context, namespace, manifest string) error {
+func (k *Kubectl) Provision(ctx context.Context, namespace string, challenge game.Challenge) error {
 	if !validNamespace(namespace) {
 		return fmt.Errorf("invalid namespace %q", namespace)
 	}
@@ -33,11 +33,17 @@ func (k *Kubectl) Provision(ctx context.Context, namespace, manifest string) err
 		_ = k.Delete(context.Background(), namespace)
 		return fmt.Errorf("label namespace: %s", result.Output)
 	}
-	manifest = strings.ReplaceAll(manifest, "{{TOOLBOX_IMAGE}}", k.toolboxImage)
+	manifest := strings.ReplaceAll(challenge.Manifest, "{{TOOLBOX_IMAGE}}", k.toolboxImage)
 	args := []string{"--namespace", namespace, "apply", "-f", "-"}
 	if result := k.run(ctx, manifest, nil, args); result.ExitCode != 0 {
 		_ = k.Delete(context.Background(), namespace)
 		return fmt.Errorf("apply challenge: %s", result.Output)
+	}
+	for _, setup := range challenge.Setup {
+		if result := k.Inspect(ctx, namespace, setup); result.ExitCode != 0 {
+			_ = k.Delete(context.Background(), namespace)
+			return fmt.Errorf("prepare challenge: %s", result.Output)
+		}
 	}
 	wait := []string{"--namespace", namespace, "wait", "--for=condition=Ready", "pod/toolbox", "--timeout=90s"}
 	if result := k.runTimeout(ctx, 95*time.Second, "", nil, wait); result.ExitCode != 0 {
