@@ -18,7 +18,7 @@ func TestMenuSelectsChallenge(t *testing.T) {
 	if len(selected) != 1 || selected[0] != "scale-up" {
 		t.Fatalf("selected = %v", selected)
 	}
-	if !strings.Contains(output.String(), "Progress: 0/4") {
+	if !strings.Contains(output.String(), "Foundations\n") || !strings.Contains(output.String(), "Progress: 0/25") {
 		t.Fatalf("menu output = %q", output.String())
 	}
 }
@@ -29,7 +29,7 @@ func TestMenuSelectsRemaining(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(selected) != 3 || selected[0] != "scale-up" {
+	if len(selected) != 24 || selected[0] != "first-pod" {
 		t.Fatalf("selected = %v", selected)
 	}
 }

@@ -21,7 +21,7 @@ type testCluster struct {
 	terminal *testTerminal
 }
 
-func (c *testCluster) Provision(context.Context, string, string) error { return nil }
+func (c *testCluster) Provision(context.Context, string, game.Challenge) error { return nil }
 func (c *testCluster) Inspect(_ context.Context, _ string, args []string) game.Result {
 	if !c.fixed {
 		return game.Result{Output: "nginx:image-does-not-exist"}

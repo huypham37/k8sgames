@@ -14,13 +14,14 @@ type fakeCluster struct {
 	provisioned string
 	deleted     string
 	fixed       bool
+	results     []Result
 }
 
-func (f *fakeCluster) Provision(_ context.Context, namespace, manifest string) error {
+func (f *fakeCluster) Provision(_ context.Context, namespace string, challenge Challenge) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.provisioned = namespace
-	if !strings.Contains(manifest, "image-does-not-exist") {
+	if !strings.Contains(challenge.Manifest, "image-does-not-exist") {
 		return context.Canceled
 	}
 	return nil
@@ -29,6 +30,11 @@ func (f *fakeCluster) Provision(_ context.Context, namespace, manifest string) e
 func (f *fakeCluster) Inspect(_ context.Context, _ string, args []string) Result {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if len(f.results) > 0 {
+		result := f.results[0]
+		f.results = f.results[1:]
+		return result
+	}
 	if !f.fixed {
 		return Result{Output: "nginx:image-does-not-exist"}
 	}
@@ -36,6 +42,19 @@ func (f *fakeCluster) Inspect(_ context.Context, _ string, args []string) Result
 		return Result{Output: "2"}
 	}
 	return Result{Output: "nginx:1.27-alpine"}
+}
+
+func TestGradeComparisons(t *testing.T) {
+	provider := &fakeCluster{results: []Result{{Output: "list get"}, {Output: "3"}}}
+	manager := NewManager(provider, NewCatalog(), time.Minute, 1)
+	session := Session{Challenge: Challenge{Probes: []Probe{
+		unorderedProbe([]string{"one"}, []string{"get", "list"}, "wrong set"),
+		atLeastProbe([]string{"two"}, 2, "too small"),
+	}}}
+	completed, progress := manager.grade(context.Background(), &session)
+	if !completed || progress != "Challenge complete." {
+		t.Fatalf("grade() = %v, %q", completed, progress)
+	}
 }
 
 func (f *fakeCluster) Delete(_ context.Context, namespace string) error {
@@ -102,15 +121,40 @@ func TestSessionLimit(t *testing.T) {
 
 func TestCatalog(t *testing.T) {
 	catalog := NewCatalog()
-	if got := len(catalog.All()); got != 4 {
-		t.Fatalf("challenge count = %d, want 4", got)
+	expected := []string{
+		"first-pod", "scale-up", "scheduling", "broken-image", "crash-loop", "self-healing",
+		"daemonset", "batch-workloads", "rolling-rollback",
+		"service-discovery", "service-selector", "ingress-tls", "network-segmentation", "dns-debugging",
+		"configmaps", "secrets", "persistent-storage", "statefulset",
+		"resource-limits", "production-readiness", "rbac-fortress", "outage-resilience", "three-tier", "black-friday", "full-production",
 	}
-	for _, challenge := range catalog.All() {
-		if challenge.Manifest == "" || len(challenge.Probes) == 0 {
+	if got := len(catalog.All()); got != len(expected) {
+		t.Fatalf("challenge count = %d, want %d", got, len(expected))
+	}
+	seen := map[string]bool{}
+	for index, challenge := range catalog.All() {
+		if challenge.ID != expected[index] {
+			t.Fatalf("challenge %d = %q, want %q", index, challenge.ID, expected[index])
+		}
+		if challenge.ID == "" || challenge.Title == "" || challenge.Chapter == "" || challenge.Objective == "" || challenge.Hint == "" || challenge.Manifest == "" || len(challenge.Probes) == 0 {
 			t.Fatalf("incomplete challenge: %#v", challenge)
 		}
+		if seen[challenge.ID] {
+			t.Fatalf("duplicate challenge ID %q", challenge.ID)
+		}
+		seen[challenge.ID] = true
 		if strings.Contains(challenge.Manifest, "\t") {
 			t.Fatalf("challenge %q manifest contains a YAML-invalid tab", challenge.ID)
+		}
+		for _, args := range challenge.Setup {
+			if len(args) == 0 {
+				t.Fatalf("challenge %q has an empty setup command", challenge.ID)
+			}
+		}
+		for _, probe := range challenge.Probes {
+			if len(probe.Args) == 0 || probe.Pending == "" {
+				t.Fatalf("challenge %q has an incomplete probe: %#v", challenge.ID, probe)
+			}
 		}
 	}
 	broken, err := catalog.Find("broken-image")
